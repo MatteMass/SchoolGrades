@@ -13,5 +13,6 @@ namespace SchoolGrades
         internal string PathAndFile_Current { get; set; }
         internal string PathImages { get; set; }
         internal string PathDocuments { get; set; }
+
     }
 }
