@@ -1,157 +1,180 @@
-﻿using SchoolGrades.BusinessObjects;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Data.Common;
+using System.Data;
+using System.Data.SqlClient; // Changed to use SQL Server's data access library
+using SchoolGrades.BusinessObjects;
 using System.IO;
+using System.Data.Common;
+using System.Threading;
+using System.Xml.Linq;
 
 namespace SchoolGrades
 {
     internal partial class SqlServer_DataLayer : DataLayer
     {
+
+        internal override void CreateTableImage()
+        {
+            using (DbConnection conn = Connect())
+            {
+                //conn.Open();
+                DbCommand cmd = conn.CreateCommand();
+                string query;
+                query = "CREATE TABLE Images(" +
+                    "IdImage INT NOT NULL, " +
+                    "imagePath VARCHAR (255), " +
+                    "caption VARCHAR (45), " +
+                    "PRIMARY KEY (IdImage)" +
+                    ");";
+                cmd.CommandText = query;
+                cmd.ExecuteNonQuery();
+            };
+        }
+
         internal override List<Image> GetAllImagesShownToAClassDuringLessons(Class Class, SchoolSubject Subject,
             DateTime DateStart = default(DateTime), DateTime DateFinish = default(DateTime))
         {
             List<Image> images = new List<Image>();
-
-            DbDataReader dRead;
-            DbCommand cmd;
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = new SqlConnection()) // Changed to SqlConnection
             {
-                cmd = conn.CreateCommand();
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
                 string query;
                 query = "SELECT * FROM Images" +
                         " JOIN Lessons_Images ON Images.idImage=Lessons_Images.idImage" +
                         " JOIN Lessons ON Lessons.idLesson=Lessons_Images.idLesson" +
-                        " WHERE Lessons.idClass=" + Class.IdClass +
-                        " AND Lessons.idSchoolSubject='" + Subject.IdSchoolSubject + "'";
+                        " WHERE Lessons.idClass=@ClassId" +
+                        " AND Lessons.idSchoolSubject=@SubjectId";
                 if (DateStart != default(DateTime) && DateFinish != default(DateTime))
-                    query += " AND Lessons.date BETWEEN " +
-                    SqlDate(DateStart) + " AND " + SqlDate(DateFinish);
-                query += ";";
+                    query += " AND Lessons.date BETWEEN @DateStart AND @DateFinish";
                 cmd.CommandText = query;
-                dRead = cmd.ExecuteReader();
-                while (dRead.Read())
-                {
-                    Image i = new Image();
-                    i.IdImage = (int)dRead["IdImage"];
-                    i.Caption = (string)dRead["Caption"];
-                    i.RelativePathAndFilename = (string)dRead["ImagePath"];
+                cmd.Parameters.AddWithValue("@ClassId", Class.IdClass);
+                cmd.Parameters.AddWithValue("@SubjectId", Subject.IdSchoolSubject);
+                cmd.Parameters.AddWithValue("@DateStart", DateStart);
+                cmd.Parameters.AddWithValue("@DateFinish", DateFinish);
 
-                    images.Add(i);
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        Image i = new Image();
+                        i.IdImage = (int)reader["IdImage"];
+                        i.Caption = (string)reader["Caption"];
+                        i.RelativePathAndFilename = (string)reader["ImagePath"];
+                        images.Add(i);
+                    }
                 }
-                cmd.Dispose();
-                dRead.Dispose();
             }
             return images;
         }
+        //metodo adattato per sql per ottenere la caption delle immagini
         internal override List<string> GetCaptionsOfThisImage(string FileName)
         {
             List<string> captions = new List<string>();
-
-            DbDataReader dRead;
-            DbCommand cmd;
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = new SqlConnection()) // Changed to SqlConnection
             {
-                cmd = conn.CreateCommand();
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
+                SqlDataReader reader;
                 string query;
                 query = "SELECT Caption FROM Images" +
-                        " WHERE imagePath " + SqlLikeStatement(FileName) + "";
-                query += ";";
+                    " WHERE imagePath" + SqlLikeStatement(FileName) + ";";
                 cmd.CommandText = query;
-                dRead = cmd.ExecuteReader();
-                while (dRead.Read())
+                reader = cmd.ExecuteReader();
+                while (reader.Read())
                 {
-                    captions.Add((string)dRead["Caption"]);
+                    captions.Add((string)reader["CAPTION"]);
                 }
                 cmd.Dispose();
-                dRead.Dispose();
+                reader.Dispose();
             }
             return captions;
         }
+
         internal override void EraseStudentsPhoto(int? IdStudent, string SchoolYear)
         {
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = new SqlConnection())
             {
-                DbCommand cmd = conn.CreateCommand();
-                cmd.CommandText = "DELETE FROM StudentsPhotos_Students" +
-                    " WHERE idStudent=" + IdStudent +
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
+                string query;
+                query = "DELETE FROM StudentsPhoto_Students" +
+                    " WHERE idStudents=" + IdStudent +
                     " AND idSchoolYear='" + SchoolYear + "'" +
                     ";";
                 cmd.ExecuteNonQuery();
                 cmd.Dispose();
             }
         }
+
+
         internal override string GetFilePhoto(int? IdStudent, string SchoolYear)
         {
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = new SqlConnection())
             {
-                DbCommand cmd = conn.CreateCommand();
-                string query = "SELECT StudentsPhotos.photoPath" +
-                    " FROM StudentsPhotos_Students, StudentsPhotos" +
-                    " WHERE StudentsPhotos_Students.idStudentsPhoto = StudentsPhotos.idStudentsPhoto";
-                if (SchoolYear != null && SchoolYear != "")
-                {
-                    query += " AND (StudentsPhotos_Students.idSchoolYear='" + SchoolYear + "'" +
-                        " OR StudentsPhotos_Students.idSchoolYear = '" + SchoolYear.Replace("-", "") + "'" + // !!!! temporary !!!!
-                        ")";
-                }
-                query += " AND StudentsPhotos_Students.idStudent = " + IdStudent + "; ";
-                string NamePath = null;
-                try
-                {
-                    cmd.CommandText = query;
-                    NamePath = (string)cmd.ExecuteScalar();
-                }
-                catch (Exception ex)
-                {
-
-                }
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
+                string query;
+                query = "SELECT photoPath FROM StudentsPhoto_Students" +
+                    " WHERE idStudents=" + IdStudent +
+                    " AND idSchoolYear='" + SchoolYear + "'" +
+                    ";";
+                cmd.CommandText = query;
+                string photoPath = (string)cmd.ExecuteScalar();
                 cmd.Dispose();
-                return NamePath;
+                return photoPath;
             }
         }
+
         internal override void ChangeImagesPath(Class Class, DbCommand cmd)
         {
-            // find 
-            DbDataReader dRead;
-            cmd.CommandText = "SELECT Images.idImage, Images.imagePath" +
+            using (SqlConnection conn = new SqlConnection())
+            {
+                conn.Open();
+                SqlDataReader reader;
+                cmd = conn.CreateCommand();
+                string query;
+                query = "SELECT TOP 1 Images.idImage, Images.imagePath" +
                 " FROM Images" +
                 " JOIN Lessons_Images ON Images.idImage=Lessons_Images.idImage" +
                 " JOIN Lessons ON Lessons.idLesson = Lessons_Images.idLesson" +
                 " WHERE Lessons.idClass=" + Class.IdClass +
-                " LIMIT 1" +
-            ";";
-            dRead = cmd.ExecuteReader();
-            dRead.Read();
-            string originalPath = Path.GetDirectoryName(Safe.String(dRead["imagePath"]));
-            string originalFolder = originalPath.Substring(0, originalPath.IndexOf("\\"));
-            dRead.Close();
-            string newFolder = Class.SchoolYear + "_" + Class.Abbreviation;
+                " ;";
+                reader = (SqlDataReader)cmd.ExecuteReader();
+                reader.Read();
+                string originalPath = Path.GetDirectoryName(Safe.String(reader["imagePath"]));
+                string originalFolder = originalPath.Substring(0, originalPath.IndexOf("\\"));
+                reader.Close();
+                string newFolder = Class.SchoolYear + "_" + Class.Abbreviation;
 
-            // replace the folder name in Images path 
-            cmd.CommandText = "UPDATE Images" +
-                " SET imagePath=REPLACE(Images.imagePath,'" + originalFolder + "','" + newFolder + "')" +
-            " FROM Images Img" +
-            " JOIN Lessons_Images ON Img.IdImage=Lessons_Images.idImage" +
-            " JOIN Lessons ON Lessons.idLesson=Lessons_Images.idLesson" +
-            " WHERE Lessons.idClass=" + Class.IdClass +
-            ";";
-            cmd.ExecuteNonQuery();
+                // replace the folder name in Images path 
+                query = "UPDATE Images" +
+                    " SET imagePath=REPLACE(Images.imagePath,'" + originalFolder + "','" + newFolder + "')" +
+                    " FROM Images Img" +
+                    " JOIN Lessons_Images ON Img.IdImage=Lessons_Images.idImage" +
+                    " JOIN Lessons ON Lessons.idLesson=Lessons_Images.idLesson" +
+                    " WHERE Lessons.idClass=" + Class.IdClass +
+                    ";";
+                cmd.ExecuteNonQuery();
+            }
         }
+
         internal override void SaveImagePath(int? id, string path)
         {
-            string query;
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = new SqlConnection())
             {
-                DbCommand cmd1 = conn.CreateCommand();
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
+                string query;
                 query = "UPDATE Images" +
                 " SET imagePath=" + SqlString(path) + "" +
                 " WHERE idImage=" + id +
                 ";";
-                cmd1.CommandText = query;
-                cmd1.ExecuteNonQuery();
+                cmd.CommandText = query;
+                cmd.ExecuteNonQuery();
             }
         }
+
         internal override int? SaveDemoStudentPhotoPath(string relativePath, DbCommand cmd)
         {
             int? nextId = null;
@@ -177,13 +200,15 @@ namespace SchoolGrades
             }
             return nextId;
         }
+
         internal override void RemoveImageFromLesson(Lesson Lesson, Image Image, bool AlsoEraseImageFile)
         {
             // delete from the link table
-            string query;
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = (SqlConnection)Connect())
             {
-                DbCommand cmd = conn.CreateCommand();
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
+                string query;
                 query = "DELETE FROM Lessons_Images" +
                     " WHERE idImage=" +
                     Image.IdImage +
@@ -203,11 +228,13 @@ namespace SchoolGrades
                 cmd.Dispose();
             }
         }
+
         internal override void SaveImage(Image Image)
         {
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = (SqlConnection)Connect())
             {
-                DbCommand cmd = conn.CreateCommand();
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
                 string query;
                 query = "UPDATE Images" +
                     " SET caption=" + SqlString(Image.Caption) + "" +
@@ -221,43 +248,40 @@ namespace SchoolGrades
                 cmd.Dispose();
             }
         }
+
         internal override Image FindImageWithGivenFile(string PathAndFileNameOfImage)
         {
             Image i = new Image();
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = (SqlConnection)Connect())
             {
-                DbCommand cmd = conn.CreateCommand();
-                DbDataReader dRead;
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
+                SqlDataReader reader;
                 string query;
                 query = "SELECT * FROM Images" +
                         " WHERE Images.imagePath=" +
                         SqlString(PathAndFileNameOfImage.Remove(0, Commons.PathImages.Length + 1)) +
                         ";";
                 cmd.CommandText = query;
-                dRead = cmd.ExecuteReader();
-                dRead.Read(); // just one record ! 
-                if (!dRead.HasRows)
+                reader = cmd.ExecuteReader();
+                reader.Read(); // just one record ! 
+                if (!reader.HasRows)
                     return null;
-                i.IdImage = (int)dRead["IdImage"];
-                i.Caption = (string)dRead["Caption"];
-                i.RelativePathAndFilename = (string)dRead["ImagePath"];
+                i.IdImage = (int)reader["IdImage"];
+                i.Caption = (string)reader["Caption"];
+                i.RelativePathAndFilename = (string)reader["ImagePath"];
                 cmd.Dispose();
-                dRead.Dispose();
+                reader.Dispose();
             }
             return i;
         }
-        /// <summary>
-        /// Creates a new Image in Images and links it to the lesson
-        /// If the image has an nextId != 0, it exists and is not created 
-        /// </summary>
-        /// <param name="Image"></param>
-        /// <param name="Lesson"></param>
-        /// <returns></returns>
+
         internal override int? LinkOneImage(Image Image, Lesson Lesson)
         {
-            using (DbConnection conn = Connect())
+            using (SqlConnection conn = (SqlConnection)Connect())
             {
-                DbCommand cmd = conn.CreateCommand();
+                conn.Open();
+                SqlCommand cmd = conn.CreateCommand();
                 string query;
                 if (Image.IdImage == 0)
                 {

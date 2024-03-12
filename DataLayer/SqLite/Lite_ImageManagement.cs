@@ -8,6 +8,10 @@ namespace SchoolGrades
 {
     internal partial class SqLite_DataLayer : DataLayer
     {
+        internal override void CreateTableImage()
+        {
+            throw new NotImplementedException();
+        }
         internal override List<Image> GetAllImagesShownToAClassDuringLessons(Class Class, SchoolSubject Subject,
             DateTime DateStart = default(DateTime), DateTime DateFinish = default(DateTime))
         {
